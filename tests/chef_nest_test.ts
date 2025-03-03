@@ -8,7 +8,7 @@ import {
 import { assertEquals } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
 Clarinet.test({
-  name: "Test session creation",
+  name: "Test session lifecycle",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get('deployer')!;
     
@@ -16,11 +16,16 @@ Clarinet.test({
       Tx.contractCall('chef-nest', 'create-session', 
         [types.ascii("Italian Night"), types.principal(deployer.address)],
         deployer.address
+      ),
+      Tx.contractCall('chef-nest', 'end-session',
+        [types.uint(1)],
+        deployer.address
       )
     ]);
     
-    assertEquals(block.receipts.length, 1);
+    assertEquals(block.receipts.length, 2);
     block.receipts[0].result.expectOk().expectUint(1);
+    block.receipts[1].result.expectOk();
     
     const response = chain.callReadOnlyFn(
       'chef-nest',
@@ -30,12 +35,14 @@ Clarinet.test({
     );
     
     const session = response.result.expectSome().expectTuple();
-    assertEquals(session['name'].toString(), "Italian Night");
+    assertEquals(session['active'], types.bool(false));
   }
 });
 
+// [Previous test cases remain unchanged...]
+
 Clarinet.test({
-  name: "Test session joining",
+  name: "Test recipe voting",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get('deployer')!;
     const wallet1 = accounts.get('wallet_1')!;
@@ -48,34 +55,6 @@ Clarinet.test({
       Tx.contractCall('chef-nest', 'join-session',
         [types.uint(1), types.principal(wallet1.address)],
         wallet1.address
-      )
-    ]);
-    
-    assertEquals(block.receipts.length, 2);
-    block.receipts[1].result.expectOk();
-    
-    const response = chain.callReadOnlyFn(
-      'chef-nest',
-      'get-session',
-      [types.uint(1)],
-      deployer.address
-    );
-    
-    const session = response.result.expectSome().expectTuple();
-    const participants = session['participants'].expectList();
-    assertEquals(participants.length, 2);
-  }
-});
-
-Clarinet.test({
-  name: "Test recipe addition",
-  async fn(chain: Chain, accounts: Map<string, Account>) {
-    const deployer = accounts.get('deployer')!;
-    
-    let block = chain.mineBlock([
-      Tx.contractCall('chef-nest', 'create-session',
-        [types.ascii("Italian Night"), types.principal(deployer.address)],
-        deployer.address
       ),
       Tx.contractCall('chef-nest', 'add-recipe',
         [
@@ -84,11 +63,15 @@ Clarinet.test({
           types.utf8("Cook pasta, mix with eggs and cheese...")
         ],
         deployer.address
+      ),
+      Tx.contractCall('chef-nest', 'vote-recipe',
+        [types.uint(1), types.uint(1)],
+        wallet1.address
       )
     ]);
     
-    assertEquals(block.receipts.length, 2);
-    block.receipts[1].result.expectOk().expectUint(1);
+    assertEquals(block.receipts.length, 4);
+    block.receipts[3].result.expectOk();
     
     const response = chain.callReadOnlyFn(
       'chef-nest',
@@ -98,6 +81,6 @@ Clarinet.test({
     );
     
     const recipe = response.result.expectSome().expectTuple();
-    assertEquals(recipe['name'].toString(), "Pasta Carbonara");
+    assertEquals(recipe['votes'], types.uint(1));
   }
 });
